@@ -10,8 +10,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class LoginRequestDTO {
 
-    @NotBlank(message = "Mobil nömrə boş ola bilməz")
-    private String phoneNumber;
+    @NotBlank(message = "Email boş ola bilməz")
+    private String email;
 
     @NotBlank(message = "Şifrə boş ola bilməz")
     private String password;

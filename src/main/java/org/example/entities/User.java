@@ -18,8 +18,8 @@ public class User {
 
     private String fullName;
 
-    @Column(unique = true)
-    private String phoneNumber;
+//    @Column(unique = true)
+//    private String phoneNumber;
 
     @Email(message = "email duzgun deyil")
     @Column(name = "email", nullable = false, unique = true)

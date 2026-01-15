@@ -61,4 +61,11 @@ public class AuthController {
 
         return ResponseEntity.ok(response);
     }
+    @PostMapping("/logout")
+    public ResponseEntity<AuthResponseDTO> logout() {
+        // Cari sessiya məlumatlarını (əgər varsa) təmizləyir
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+
+        return ResponseEntity.ok(new AuthResponseDTO(true, "Çıxış uğurla tamamlandı."));
+    }
 }

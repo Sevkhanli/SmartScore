@@ -17,9 +17,7 @@ public class RegisterRequestDTO {
     @Size(min = 3, max = 100, message = "Ad və soyad 3-100 simvol arasında olmalıdır")
     private String fullName; // Ad və soyad
 
-    @NotBlank(message = "Mobil nömrə boş ola bilməz")
-    @Pattern(regexp = "^\\+?[0-9]{10,15}$", message = "Mobil nömrə düzgün formatda deyil")
-    private String phoneNumber;
+
 
     @NotBlank(message = "Email boş ola bilməz")
     @Email(message = "Email düzgün formatda deyil")

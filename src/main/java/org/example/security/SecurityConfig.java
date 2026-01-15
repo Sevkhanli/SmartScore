@@ -36,7 +36,9 @@ public class SecurityConfig {
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/auth/verify",
-                                "/api/auth/resend-otp" // Verification tokeni burada yoxlanılacaq
+                                "/api/auth/resend-otp",
+                                "/api/auth/refresh-token",
+                                "/api/auth/logout"// Verification tokeni burada yoxlanılacaq
                         ).permitAll()
 
                         // 2. Swagger/OpenAPI yolları (permitAll)

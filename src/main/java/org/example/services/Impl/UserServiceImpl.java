@@ -41,13 +41,12 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public AuthResponseDTO registerUser(RegisterRequestDTO request) {
-        if (userRepository.existsByPhoneNumber(request.getPhoneNumber()) || userRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmail(request.getEmail())) {
             throw new UserAlreadyExistsException("Bu nömrə və ya email artıq qeydiyyatdan keçib.");
         }
 
         User user = new User();
         user.setFullName(request.getFullName());
-        user.setPhoneNumber(request.getPhoneNumber());
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(Role.USER);
@@ -132,7 +131,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public AuthResponseDTO loginUser(LoginRequestDTO request) {
 
-        User user = userRepository.findByPhoneNumber(request.getPhoneNumber())
+        User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UserNotFoundException("Mobil nömrə və ya şifrə yanlışdır."));
 
         if (!user.isVerified()) {
