@@ -19,4 +19,5 @@ public class VerifyRequestDTO {
     @NotBlank(message = "OTP kodu boş ola bilməz")
     @Pattern(regexp = "^[0-9]{4}$", message = "OTP kodu 4 rəqəm olmalıdır")
     private String otpCode;
+
 }
