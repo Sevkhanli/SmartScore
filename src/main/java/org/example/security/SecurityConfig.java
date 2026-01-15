@@ -28,20 +28,23 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        return http // "Missing return statement" xətasını aradan qaldırmaq üçün return ilə başlamalıdır
+        return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        // 1. Authentication və Token API'ləri (permitAll)
+                        // 1. Giriş tələb edən auth endpoint-ləri (Burada sıralama önəmlidir!)
+                        .requestMatchers("/api/auth/me", "/api/auth/logout").authenticated()
+
+                        // 2. Hər kəsə açıq olan (Token tələb etməyən) yollar
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/auth/verify",
                                 "/api/auth/resend-otp",
                                 "/api/auth/refresh-token",
-                                "/api/auth/logout"// Verification tokeni burada yoxlanılacaq
+                                "/api/auth/google"
                         ).permitAll()
 
-                        // 2. Swagger/OpenAPI yolları (permitAll)
+                        // 3. Swagger və Dokumentasiya yolları
                         .requestMatchers(
                                 "/v2/api-docs", "/v3/api-docs", "/v3/api-docs/**",
                                 "/swagger-resources", "/swagger-resources/**",
@@ -49,19 +52,19 @@ public class SecurityConfig {
                                 "/swagger-ui/**", "/webjars/**", "/swagger-ui.html"
                         ).permitAll()
 
-                        // 3. Qalan bütün yollar Access Token tələb edir
+                        // 4. Qalan bütün API yolları mütləq token tələb edir
                         .requestMatchers("/api/**", "/rest/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // JWT olduğu üçün session saxlanmır
                 )
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(authDeniedHandler) // 401 Unauthorized üçün
-                        .accessDeniedHandler(authDeniedHandler)           // 403 Forbidden üçün
+                        .authenticationEntryPoint(authDeniedHandler) // 401 xətası üçün
+                        .accessDeniedHandler(authDeniedHandler)      // 403 xətası üçün
                 )
                 .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class) // JWT filterini əlavə edirik
                 .build();
     }
 
