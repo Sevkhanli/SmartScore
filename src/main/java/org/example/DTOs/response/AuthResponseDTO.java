@@ -1,9 +1,12 @@
 package org.example.DTOs.response;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonInclude; // 1. BU İMPORTU ƏLAVƏ EDİN
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
 
 // 2. BU ANOTASİYANI ƏLAVƏ EDİN
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -16,6 +19,12 @@ public class AuthResponseDTO {
     // Bu sahələr null olduqda JSON-a düşməyəcək
     private String accessToken;
     private String refreshToken;
+
+    //TODO Profil məlumatları üçün sahələr
+    private String fullName;
+    private String email;
+    @JsonFormat(pattern = "dd.MM.yyyy") // Məsələn: 16.01.2026
+    private LocalDateTime createdAt;
 
     // 1. Register, Verify və ya xəta üçün konstruktor (tokenlər null olacaq)
     public AuthResponseDTO(Boolean success, String message) {

@@ -18,6 +18,7 @@ public interface UserService {
 
     AuthResponseDTO loginWithGoogle(GoogleLoginRequestDTO request);
 
+    AuthResponseDTO getUserProfile(String email);
 
 
 

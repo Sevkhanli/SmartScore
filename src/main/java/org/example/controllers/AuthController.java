@@ -60,15 +60,17 @@ public class AuthController {
     }
     @GetMapping("/me")
     public ResponseEntity<AuthResponseDTO> getMyProfile() {
+        // Token-dən gələn email məlumatını götürürük
         org.springframework.security.core.Authentication auth =
                 SecurityContextHolder.getContext().getAuthentication();
 
         if (auth == null || !auth.isAuthenticated() || auth.getName().equals("anonymousUser")) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new AuthResponseDTO(false, "Sistem sizi tanımadı. Zəhmət olmasa giriş edin."));
+                    .body(new AuthResponseDTO(false, "Sessiya tapılmadı. Zəhmət olmasa giriş edin."));
         }
 
         String email = auth.getName();
-        return ResponseEntity.ok(new AuthResponseDTO(true, "Xoş gəldiniz! Sizin emailiniz: " + email));
+        // Servisdən gələn cavabı birbaşa qaytarırıq
+        return ResponseEntity.ok(userService.getUserProfile(email));
     }
     }
