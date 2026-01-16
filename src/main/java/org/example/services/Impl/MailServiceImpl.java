@@ -19,7 +19,7 @@ public class MailServiceImpl implements MailService {
 
         message.setTo(toEmail);
 
-        message.setSubject("Kuryer - Email Təsdiqi Kodu (OTP)");
+        message.setSubject("Smart Score - Email Təsdiqi Kodu (OTP)");
 
         String body = String.format("""
             Hörmətli istifadəçi,
@@ -31,7 +31,7 @@ public class MailServiceImpl implements MailService {
             Qeyd: Bu kod 5 dəqiqə ərzində etibarlıdır.
 
             Hörmətlə,
-            Kuryer Komandası
+            Smart Score Komandası
             """, otpCode);
 
         message.setText(body);
