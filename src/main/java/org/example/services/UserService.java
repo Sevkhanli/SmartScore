@@ -20,6 +20,9 @@ public interface UserService {
 
     AuthResponseDTO getUserProfile(String email);
 
+    void forgotPassword(ForgotPasswordRequestDTO request);
+    AuthResponseDTO resetPassword(ResetPasswordRequestDTO request);
+
 
 
 

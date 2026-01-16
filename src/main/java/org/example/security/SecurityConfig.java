@@ -41,7 +41,9 @@ public class SecurityConfig {
                                 "/api/auth/verify",
                                 "/api/auth/resend-otp",
                                 "/api/auth/refresh-token",
-                                "/api/auth/google"
+                                "/api/auth/google",
+                                "/api/auth/forgot-password", // ƏLAVƏ EDİLDİ
+                                "/api/auth/reset-password"
                         ).permitAll()
 
                         // 3. Swagger və Dokumentasiya yolları

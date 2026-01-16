@@ -53,11 +53,23 @@ public class AuthController {
         return ResponseEntity.ok(userService.loginWithGoogle(request));
     }
 
+    @PostMapping("/forgot-password")
+    public ResponseEntity<AuthResponseDTO> forgotPassword(@Valid @RequestBody ForgotPasswordRequestDTO request) {
+        userService.forgotPassword(request);
+        return ResponseEntity.ok(new AuthResponseDTO(true, "Şifrə sıfırlama kodu emailinizə göndərildi."));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<AuthResponseDTO> resetPassword(@Valid @RequestBody ResetPasswordRequestDTO request) {
+        return ResponseEntity.ok(userService.resetPassword(request));
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<AuthResponseDTO> logout() {
         org.springframework.security.core.context.SecurityContextHolder.clearContext();
         return ResponseEntity.ok(new AuthResponseDTO(true, "Çıxış uğurla tamamlandı."));
     }
+
     @GetMapping("/me")
     public ResponseEntity<AuthResponseDTO> getMyProfile() {
         // Token-dən gələn email məlumatını götürürük

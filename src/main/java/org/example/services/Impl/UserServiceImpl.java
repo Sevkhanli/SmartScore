@@ -197,6 +197,57 @@ public class UserServiceImpl implements UserService {
 
         return response;
     }
+    @Override
+    @Transactional
+    public void forgotPassword(ForgotPasswordRequestDTO request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
+
+        // Əgər köhnə kod varsa silirik ki, yenisi göndərilsin
+        tokenRepository.findByUser(user).ifPresent(tokenRepository::delete);
+
+        String otpCode = generateOtp(); // Sənin 4 rəqəmli metodun
+        VerificationToken token = new VerificationToken();
+        token.setToken(otpCode);
+        token.setUser(user);
+        token.setExpiryDate(LocalDateTime.now().plusMinutes(5));
+        tokenRepository.save(token);
+
+        mailService.sendOtpEmail(user.getEmail(), otpCode);
+    }
+
+    @Override
+    @Transactional
+    public AuthResponseDTO resetPassword(ResetPasswordRequestDTO request) {
+        // 1. Şifrələrin eyniliyini yoxla
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            throw new RuntimeException("Şifrələr bir-birinə uyğun gəlmir.");
+        }
+
+        // 2. İstifadəçini tap
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
+
+        // 3. OTP-ni tap və yoxla
+        VerificationToken verificationToken = tokenRepository.findByUser(user)
+                .orElseThrow(() -> new InvalidOtpException("Təsdiq kodu tapılmadı."));
+
+        if (verificationToken.getExpiryDate().isBefore(LocalDateTime.now())) {
+            tokenRepository.delete(verificationToken);
+            throw new OtpExpiredException("OTP kodunun vaxtı bitib.");
+        }
+
+        if (!request.getOtpCode().equals(verificationToken.getToken())) {
+            throw new InvalidOtpException("Daxil etdiyiniz OTP kodu yanlışdır.");
+        }
+
+        // 4. Şifrəni yenilə və OTP-ni sil
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        tokenRepository.delete(verificationToken);
+
+        return new AuthResponseDTO(true, "Şifrəniz uğurla yeniləndi!");
+    }
 
     @Override
     @Transactional
