@@ -15,15 +15,17 @@ public class RegisterRequestDTO {
 
     @NotBlank(message = "Ad və soyad boş ola bilməz")
     @Size(min = 3, max = 100, message = "Ad və soyad 3-100 simvol arasında olmalıdır")
-    private String fullName; // Ad və soyad
-
-
+    private String fullName;
 
     @NotBlank(message = "Email boş ola bilməz")
     @Email(message = "Email düzgün formatda deyil")
     private String email;
 
     @NotBlank(message = "Şifrə boş ola bilməz")
-    @Size(min = 6, max = 50, message = "Şifrə minimum 6 simvol olmalıdır")
+    @Size(min = 8, max = 50, message = "Şifrə minimum 8 simvol olmalıdır")
+    @Pattern(
+            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).*$",
+            message = "Şifrədə ən az bir böyük hərf, bir kiçik hərf və bir rəqəm olmalıdır"
+    )
     private String password;
 }

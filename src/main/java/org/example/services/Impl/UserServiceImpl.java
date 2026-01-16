@@ -7,10 +7,12 @@ import com.google.api.client.json.gson.GsonFactory;
 import lombok.RequiredArgsConstructor;
 import org.example.DTOs.request.*;
 import org.example.DTOs.response.AuthResponseDTO;
+import org.example.entities.RevokedToken;
 import org.example.entities.User;
 import org.example.entities.VerificationToken;
 import org.example.enums.Role;
 import org.example.exceptions.*;
+import org.example.repositories.RevokedTokenRepository;
 import org.example.repositories.UserRepository;
 import org.example.repositories.VerificationTokenRepository;
 import org.example.security.JwtService;
@@ -39,6 +41,7 @@ public class UserServiceImpl implements UserService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final VerificationTokenRepository tokenRepository;
+    private final RevokedTokenRepository revokedTokenRepository;
 
     @Value("${google.id}")
     private String googleClientId;
@@ -57,19 +60,43 @@ public class UserServiceImpl implements UserService {
         user.setRole(Role.USER);
         user.setVerified(false);
 
-        // Save edildikdə @CreationTimestamp avtomatik vaxtı dolduracaq
         User savedUser = userRepository.save(user);
-
-        String otpCode = generateOtp();
-        VerificationToken token = new VerificationToken();
-        token.setToken(otpCode);
-        token.setUser(savedUser);
-        token.setExpiryDate(LocalDateTime.now().plusMinutes(5));
-        tokenRepository.save(token);
-
-        mailService.sendOtpEmail(user.getEmail(), otpCode);
+        sendOrUpdateOtp(savedUser);
 
         return new AuthResponseDTO(true, "Qeydiyyat uğurludur. Email təsdiqi tələb olunur.");
+    }
+
+    @Override
+    @Transactional
+    public void resendOtp(ResendRequestDTO request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
+        if (user.isVerified()) throw new UserAlreadyVerifiedException("İstifadəçi artıq təsdiqlənib.");
+        sendOrUpdateOtp(user);
+    }
+
+    @Override
+    @Transactional
+    public void forgotPassword(ForgotPasswordRequestDTO request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
+        sendOrUpdateOtp(user);
+    }
+
+    private void sendOrUpdateOtp(User user) {
+        VerificationToken token = tokenRepository.findByUser(user)
+                .orElseGet(() -> {
+                    VerificationToken newToken = new VerificationToken();
+                    newToken.setUser(user);
+                    return newToken;
+                });
+
+        String otpCode = generateOtp();
+        token.setToken(otpCode);
+        token.setExpiryDate(LocalDateTime.now().plusMinutes(5));
+
+        tokenRepository.save(token);
+        mailService.sendOtpEmail(user.getEmail(), otpCode);
     }
 
     @Override
@@ -78,12 +105,8 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
 
-        if (user.isVerified()) {
-            throw new UserAlreadyVerifiedException("Bu istifadəçi artıq təsdiqlənib.");
-        }
-
         VerificationToken verificationToken = tokenRepository.findByUser(user)
-                .orElseThrow(() -> new InvalidOtpException("Təsdiq kodu yoxdur."));
+                .orElseThrow(() -> new InvalidOtpException("Təsdiq kodu tapılmadı."));
 
         if (verificationToken.getExpiryDate().isBefore(LocalDateTime.now())) {
             tokenRepository.delete(verificationToken);
@@ -103,34 +126,12 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public void resendOtp(ResendRequestDTO request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
-
-        if (user.isVerified()) {
-            throw new UserAlreadyVerifiedException("İstifadəçi artıq təsdiqlənib.");
-        }
-
-        tokenRepository.findByUser(user).ifPresent(tokenRepository::delete);
-
-        String newOtpCode = generateOtp();
-        VerificationToken newToken = new VerificationToken();
-        newToken.setToken(newOtpCode);
-        newToken.setUser(user);
-        newToken.setExpiryDate(LocalDateTime.now().plusMinutes(5));
-        tokenRepository.save(newToken);
-
-        mailService.sendOtpEmail(user.getEmail(), newOtpCode);
-    }
-
-    @Override
-    @Transactional
     public AuthResponseDTO loginUser(LoginRequestDTO request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UserNotFoundException("Email və ya şifrə yanlışdır."));
 
         if (!user.isVerified()) {
-            resendOtp(new ResendRequestDTO(user.getEmail())); // Kod təkrarını azaltmaq üçün resendOtp çağırıldı
+            sendOrUpdateOtp(user);
             throw new UserNotVerifiedException("Email təsdiqi tələb olunur. Yeni OTP göndərildi.");
         }
 
@@ -138,14 +139,65 @@ public class UserServiceImpl implements UserService {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(user.getEmail(), request.getPassword())
             );
-
-            String accessToken = jwtService.generateToken(user);
-            String refreshToken = jwtService.generateRefreshToken(user);
-
-            return new AuthResponseDTO(true, "Giriş uğurludur.", accessToken, refreshToken);
+            return new AuthResponseDTO(true, "Giriş uğurludur.",
+                    jwtService.generateToken(user), jwtService.generateRefreshToken(user));
         } catch (AuthenticationException e) {
             throw new InvalidCredentialsException("Email və ya şifrə yanlışdır.");
         }
+    }
+
+    // === 2 PARAMETRLI LOGOUT (Access və Refresh) ===
+    @Override
+    @Transactional
+    public void logout(String authHeader, String refreshToken) {
+        // 1. Refresh Token mütləqdir və yoxlanılmalıdır
+        if (refreshToken == null || refreshToken.trim().isEmpty()) {
+            throw new InvalidTokenException("Refresh Token tələb olunur.");
+        }
+
+        // 2. YOXLANIŞ: findUsername daxilində tokenin vaxtı yoxlanılır.
+        // Əgər tokenin vaxtı bitibsə, sistem dərhal xəta atacaq və
+        // aşağıdakı saveRevokedToken hissələri HİÇ VAXT işləməyəcək (Bazaya insert getməyəcək).
+        jwtService.findUsername(refreshToken);
+
+        // 3. Əgər bura gəlib çıxdısa, deməli token hələ keçərlidir.
+        // Access Token ləğvi
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            saveRevokedToken(authHeader.substring(7).trim());
+        }
+
+        // Refresh Token ləğvi
+        saveRevokedToken(refreshToken.trim());
+    }
+
+    private void saveRevokedToken(String token) {
+        if (!revokedTokenRepository.existsByToken(token)) {
+            RevokedToken rt = new RevokedToken();
+            rt.setToken(token);
+            rt.setRevokedAt(LocalDateTime.now());
+            revokedTokenRepository.save(rt);
+        }
+    }
+
+    @Override
+    @Transactional
+    public AuthResponseDTO resetPassword(ResetPasswordRequestDTO request) {
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            throw new RuntimeException("Şifrələr uyğun deyil.");
+        }
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
+
+        VerificationToken vt = tokenRepository.findByUser(user)
+                .orElseThrow(() -> new InvalidOtpException("Kod tapılmadı."));
+
+        if (!request.getOtpCode().equals(vt.getToken())) throw new InvalidOtpException("Kod yanlışdır.");
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        tokenRepository.delete(vt);
+
+        return new AuthResponseDTO(true, "Şifrə yeniləndi.");
     }
 
     @Override
@@ -157,117 +209,55 @@ public class UserServiceImpl implements UserService {
                     .build();
 
             GoogleIdToken idToken = verifier.verify(request.getIdToken());
-            if (idToken == null) {
-                throw new InvalidTokenException("Google tokeni etibarsızdır.");
-            }
+            if (idToken == null) throw new InvalidTokenException("Google tokeni yanlışdır.");
 
             GoogleIdToken.Payload payload = idToken.getPayload();
             String email = payload.getEmail();
-            String name = (String) payload.get("name");
 
             User user = userRepository.findByEmail(email).orElseGet(() -> {
                 User newUser = new User();
                 newUser.setEmail(email);
-                newUser.setFullName(name);
+                newUser.setFullName((String) payload.get("name"));
                 newUser.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
                 newUser.setRole(Role.USER);
                 newUser.setVerified(true);
                 return userRepository.save(newUser);
             });
 
-            String accessToken = jwtService.generateToken(user);
-            String refreshToken = jwtService.generateRefreshToken(user);
-
-            return new AuthResponseDTO(true, "Google ilə giriş uğurludur.", accessToken, refreshToken);
+            return new AuthResponseDTO(true, "Google giriş uğurludur.",
+                    jwtService.generateToken(user), jwtService.generateRefreshToken(user));
         } catch (Exception e) {
-            throw new RuntimeException("Google autentifikasiya xətası: " + e.getMessage());
+            throw new RuntimeException("Google xətası: " + e.getMessage());
         }
     }
 
     @Override
     @Transactional(readOnly = true)
     public AuthResponseDTO getUserProfile(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
-
-        AuthResponseDTO response = new AuthResponseDTO(true, "Profil məlumatları gətirildi.");
-        response.setFullName(user.getFullName());
-        response.setEmail(user.getEmail());
-        response.setCreatedAt(user.getCreatedAt());
-
-        return response;
-    }
-    @Override
-    @Transactional
-    public void forgotPassword(ForgotPasswordRequestDTO request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
-
-        // Əgər köhnə kod varsa silirik ki, yenisi göndərilsin
-        tokenRepository.findByUser(user).ifPresent(tokenRepository::delete);
-
-        String otpCode = generateOtp(); // Sənin 4 rəqəmli metodun
-        VerificationToken token = new VerificationToken();
-        token.setToken(otpCode);
-        token.setUser(user);
-        token.setExpiryDate(LocalDateTime.now().plusMinutes(5));
-        tokenRepository.save(token);
-
-        mailService.sendOtpEmail(user.getEmail(), otpCode);
-    }
-
-    @Override
-    @Transactional
-    public AuthResponseDTO resetPassword(ResetPasswordRequestDTO request) {
-        // 1. Şifrələrin eyniliyini yoxla
-        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
-            throw new RuntimeException("Şifrələr bir-birinə uyğun gəlmir.");
-        }
-
-        // 2. İstifadəçini tap
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
-
-        // 3. OTP-ni tap və yoxla
-        VerificationToken verificationToken = tokenRepository.findByUser(user)
-                .orElseThrow(() -> new InvalidOtpException("Təsdiq kodu tapılmadı."));
-
-        if (verificationToken.getExpiryDate().isBefore(LocalDateTime.now())) {
-            tokenRepository.delete(verificationToken);
-            throw new OtpExpiredException("OTP kodunun vaxtı bitib.");
-        }
-
-        if (!request.getOtpCode().equals(verificationToken.getToken())) {
-            throw new InvalidOtpException("Daxil etdiyiniz OTP kodu yanlışdır.");
-        }
-
-        // 4. Şifrəni yenilə və OTP-ni sil
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        userRepository.save(user);
-        tokenRepository.delete(verificationToken);
-
-        return new AuthResponseDTO(true, "Şifrəniz uğurla yeniləndi!");
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new UserNotFoundException("Tapılmadı."));
+        AuthResponseDTO resp = new AuthResponseDTO(true, "Uğurlu.");
+        resp.setFullName(user.getFullName());
+        resp.setEmail(user.getEmail());
+        resp.setCreatedAt(user.getCreatedAt());
+        return resp;
     }
 
     @Override
     @Transactional
     public AuthResponseDTO refreshToken(String refreshToken) {
-        String userEmail = jwtService.findUsername(refreshToken);
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
-
-        if (jwtService.isTokenExpired(refreshToken)) {
-            throw new InvalidTokenException("Refresh Token-in vaxtı bitib.");
+        // Logout olmuş Refresh Tokeni bloklayırıq
+        if (revokedTokenRepository.existsByToken(refreshToken)) {
+            throw new InvalidTokenException("Bu Refresh Token ləğv edilib. Yenidən giriş edin.");
         }
 
-        String newAccessToken = jwtService.generateToken(user);
-        String newRefreshToken = jwtService.generateRefreshToken(user);
+        String email = jwtService.findUsername(refreshToken);
+        User user = userRepository.findByEmail(email).orElseThrow(() -> new UserNotFoundException("Tapılmadı."));
 
-        return new AuthResponseDTO(true, "Tokenlər yeniləndi.", newAccessToken, newRefreshToken);
+        return new AuthResponseDTO(true, "Yeniləndi.",
+                jwtService.generateToken(user), jwtService.generateRefreshToken(user));
     }
 
     private String generateOtp() {
-        Random random = new Random();
-        return String.format("%04d", random.nextInt(10000));
+        return String.format("%04d", new Random().nextInt(10000));
     }
 }

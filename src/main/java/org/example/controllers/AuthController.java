@@ -65,9 +65,13 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<AuthResponseDTO> logout() {
-        org.springframework.security.core.context.SecurityContextHolder.clearContext();
-        return ResponseEntity.ok(new AuthResponseDTO(true, "Çıxış uğurla tamamlandı."));
+    public ResponseEntity<String> logout(
+            @RequestHeader("Authorization") String authHeader,
+            // required = true edirik ki, göndərilməyəndə 400 xətası versin
+            @RequestHeader(value = "X-Refresh-Token", required = true) String refreshToken) {
+
+        userService.logout(authHeader, refreshToken);
+        return ResponseEntity.ok("Uğurla çıxış edildi.");
     }
 
     @GetMapping("/me")

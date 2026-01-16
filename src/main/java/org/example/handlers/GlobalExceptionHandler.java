@@ -4,11 +4,30 @@ import org.example.DTOs.response.AuthResponseDTO;
 import org.example.exceptions.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
+import java.util.stream.Collectors;
+
 @ControllerAdvice
 public class GlobalExceptionHandler {
+
+    // === ƏLAVƏ EDİLDİ: Validasiya (Regex, Size) xətalarını tutmaq üçün ===
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<AuthResponseDTO> handleValidationExceptions(MethodArgumentNotValidException ex) {
+        // Bütün xətaları bir mətn halına gətiririk
+        String errorMessage = ex.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(error -> error.getDefaultMessage())
+                .collect(Collectors.joining(", "));
+
+        return new ResponseEntity<>(
+                new AuthResponseDTO(false, errorMessage),
+                HttpStatus.BAD_REQUEST // 400
+        );
+    }
 
     // 404 - Tapılmadı (User, Telefon və ya Email)
     @ExceptionHandler(UserNotFoundException.class)
@@ -31,8 +50,6 @@ public class GlobalExceptionHandler {
     // 403 - Girişə İcazə Yoxdur (Təsdiqlənməyib)
     @ExceptionHandler(UserNotVerifiedException.class)
     public ResponseEntity<AuthResponseDTO> handleUserNotVerified(UserNotVerifiedException ex) {
-        // Login zamanı təsdiqlənməyibsə, 403 Forbidden və ya 401 Unauthorized qaytara bilərik.
-        // 403 daha spesifikdir.
         return new ResponseEntity<>(
                 new AuthResponseDTO(false, ex.getMessage()),
                 HttpStatus.FORBIDDEN // 403
@@ -53,4 +70,12 @@ public class GlobalExceptionHandler {
         );
     }
 
+    // Hər hansı digər gözlənilməz xəta üçün (Opsional)
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<AuthResponseDTO> handleGeneralException(Exception ex) {
+        return new ResponseEntity<>(
+                new AuthResponseDTO(false, "Sistem xətası baş verdi: " + ex.getMessage()),
+                HttpStatus.INTERNAL_SERVER_ERROR // 500
+        );
+    }
 }

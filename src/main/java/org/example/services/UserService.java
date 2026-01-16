@@ -23,7 +23,7 @@ public interface UserService {
     void forgotPassword(ForgotPasswordRequestDTO request);
     AuthResponseDTO resetPassword(ResetPasswordRequestDTO request);
 
-
+    void logout(String authHeader, String refreshToken);
 
 
 }
