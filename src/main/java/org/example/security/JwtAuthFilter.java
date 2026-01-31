@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.example.repositories.RevokedTokenRepository;
+import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -23,12 +24,26 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private final RevokedTokenRepository revokedTokenRepository;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-            throws ServletException, IOException {
+    protected void doFilterInternal(
+            @NonNull HttpServletRequest request,
+            @NonNull HttpServletResponse response,
+            @NonNull FilterChain filterChain
+    ) throws ServletException, IOException {
+
+        String path = request.getServletPath();
+
+        // 1. SWAGGER ÜÇÜN İSTİSNA: Bu yollar filter yoxlamasından keçmir
+        if (path.contains("/v3/api-docs") ||
+                path.contains("/swagger-ui") ||
+                path.contains("/swagger-resources") ||
+                path.contains("/webjars")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         final String authHeader = request.getHeader("Authorization");
 
-        // 1. Header yoxlanışı
+        // 2. Header yoxlanışı
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
@@ -36,7 +51,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String token = authHeader.substring(7).trim();
 
-        // 2. KRİTİK YOXLANIŞ: Token ləğv edilibsə, heç bir metoda (logout daxil) keçid vermə
+        // 3. KRİTİK YOXLANIŞ: Token ləğv edilibsə (Logout olubsa)
         if (revokedTokenRepository.existsByToken(token)) {
             sendErrorResponse(response, "Bu token artıq etibarsızdır. Yenidən giriş edin.");
             return;
@@ -59,14 +74,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 }
             }
         } catch (Exception e) {
-            // Tokenin vaxtı bitibsə və ya strukturu pozulubsa bura düşür.
-            // Əgər endpoint qorunursa, Spring Security özü 403/401 qaytaracaq.
+            // Tokenin vaxtı bitibsə və ya xəta varsa, Spring Security özü 401/403 qaytaracaq
         }
 
         filterChain.doFilter(request, response);
     }
 
-    // Xəta mesajını səliqəli JSON formatında qaytarmaq üçün köməkçi metod
     private void sendErrorResponse(HttpServletResponse response, String message) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");

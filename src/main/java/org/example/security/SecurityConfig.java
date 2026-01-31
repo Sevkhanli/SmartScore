@@ -10,6 +10,7 @@ import org.springframework.security.authentication.dao.DaoAuthenticationProvider
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -31,10 +32,16 @@ public class SecurityConfig {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        // 1. Giriş tələb edən auth endpoint-ləri (Burada sıralama önəmlidir!)
-                        .requestMatchers("/api/auth/me", "/api/auth/logout").authenticated()
+                        // 1. Swagger üçün icazələr
+                        .requestMatchers(
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/swagger-resources/**",
+                                "/webjars/**"
+                        ).permitAll()
 
-                        // 2. Hər kəsə açıq olan (Token tələb etməyən) yollar
+                        // 2. Açıq (Public) Auth endpoint-ləri
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/login",
@@ -42,32 +49,38 @@ public class SecurityConfig {
                                 "/api/auth/resend-otp",
                                 "/api/auth/refresh-token",
                                 "/api/auth/google",
-                                "/api/auth/forgot-password", // ƏLAVƏ EDİLDİ
+                                "/api/auth/forgot-password",
                                 "/api/auth/reset-password"
                         ).permitAll()
 
-                        // 3. Swagger və Dokumentasiya yolları
-                        .requestMatchers(
-                                "/v2/api-docs", "/v3/api-docs", "/v3/api-docs/**",
-                                "/swagger-resources", "/swagger-resources/**",
-                                "/configuration/ui", "/configuration/security",
-                                "/swagger-ui/**", "/webjars/**", "/swagger-ui.html"
-                        ).permitAll()
+                        // 3. Qorunan Auth endpoint-ləri
+                        .requestMatchers("/api/auth/me", "/api/auth/logout").authenticated()
 
-                        // 4. Qalan bütün API yolları mütləq token tələb edir
-                        .requestMatchers("/api/**", "/rest/**").authenticated()
+                        // 4. Qalan hər şey qorunur
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS) // JWT olduğu üçün session saxlanmır
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(authDeniedHandler) // 401 xətası üçün
-                        .accessDeniedHandler(authDeniedHandler)      // 403 xətası üçün
+                        .authenticationEntryPoint(authDeniedHandler)
+                        .accessDeniedHandler(authDeniedHandler)
                 )
                 .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class) // JWT filterini əlavə edirik
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
+    }
+
+    // SWAGGER ÜÇÜN ƏN VACİB HİSSƏ: Filter zəncirini bu yollar üçün söndürürük
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        return (web) -> web.ignoring().requestMatchers(
+                "/v3/api-docs/**",
+                "/swagger-ui/**",
+                "/swagger-ui.html",
+                "/swagger-resources/**",
+                "/webjars/**"
+        );
     }
 
     @Bean
