@@ -1,12 +1,27 @@
-# 1. Mərhələ: Build (Maven vasitəsilə JAR faylı yaradırıq)
-FROM maven:3.8.4-openjdk-17 AS build
+# ---------- BUILD STAGE ----------
+FROM maven:3.9.9-eclipse-temurin-17 AS build
 WORKDIR /app
-COPY . .
+
+# Copy pom.xml and download dependencies
+COPY pom.xml .
+RUN mvn dependency:go-offline
+
+# Copy source code
+COPY src ./src
+
+# Build jar
 RUN mvn clean package -DskipTests
 
-# 2. Mərhələ: Run (Yalnız JAR faylını işlədirik)
-FROM openjdk:17-jdk-slim
+
+# ---------- RUN STAGE ----------
+FROM eclipse-temurin:17-jre
 WORKDIR /app
+
+# Copy jar from build stage
 COPY --from=build /app/target/*.jar app.jar
+
+# Render uses PORT env variable
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+
+# Start app
+ENTRYPOINT ["java","-jar","app.jar"]
