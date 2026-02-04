@@ -13,14 +13,15 @@ public class MailServiceImpl implements MailService {
 
     private final JavaMailSender mailSender;
 
-
     @Override
     @Async
     public void sendOtpEmail(String toEmail, String otpCode) {
         SimpleMailMessage message = new SimpleMailMessage();
 
-        message.setTo(toEmail);
+        // SendGrid-də təsdiqlədiyin maili bura yazırıq
+        message.setFrom("sevxanli77@gmail.com");
 
+        message.setTo(toEmail);
         message.setSubject("Smart Score - Email Təsdiqi Kodu (OTP)");
 
         String body = String.format("""
@@ -42,6 +43,7 @@ public class MailServiceImpl implements MailService {
             mailSender.send(message);
             System.out.println("SUCCESS: OTP kodu " + toEmail + " ünvanına uğurla göndərildi.");
         } catch (Exception e) {
+            // Əgər nəsə səhv olsa, loqda səbəbini görəcəksən
             System.err.println("ERROR: Mail göndərilərkən xəta baş verdi: " + e.getMessage());
         }
     }
