@@ -30,6 +30,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
+                .cors(cors -> cors.configure(http)) // CORS-u aktiv et
+                .csrf(csrf -> csrf.disable())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         // 1. Swagger üçün icazələr
