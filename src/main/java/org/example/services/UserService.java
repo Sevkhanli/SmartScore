@@ -25,5 +25,5 @@ public interface UserService {
 
     void logout(String authHeader, String refreshToken);
 
-
+    void resendForgotPasswordOtp(ResendRequestDTO request); // Yeni əlavə edildi
 }

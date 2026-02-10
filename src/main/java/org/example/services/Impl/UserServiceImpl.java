@@ -51,11 +51,10 @@ public class UserServiceImpl implements UserService {
     public AuthResponseDTO registerUser(RegisterRequestDTO request) {
         // 1. Şifrələrin uyğunluğunu yoxla
         if (!request.getPassword().equals(request.getConfirmPassword())) {
-            // Mövcud exception-larından birini və ya RuntimeException istifadə edə bilərsən
             throw new InvalidCredentialsException("Şifrələr bir-biri ilə uyğun gəlmir.");
         }
 
-        // 2. Email yoxlanışı (mövcud kodun)
+        // 2. Email yoxlanışı
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new UserAlreadyExistsException("Bu email artıq qeydiyyatdan keçib.");
         }
@@ -68,7 +67,8 @@ public class UserServiceImpl implements UserService {
         user.setVerified(false);
 
         User savedUser = userRepository.save(user);
-        sendOrUpdateOtp(savedUser);
+        // Qeydiyyat olduğu üçün isResetPassword = false
+        sendOrUpdateOtp(savedUser, false);
 
         return new AuthResponseDTO(true, "Qeydiyyat uğurludur. Email təsdiqi tələb olunur.");
     }
@@ -79,7 +79,9 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
         if (user.isVerified()) throw new UserAlreadyVerifiedException("İstifadəçi artıq təsdiqlənib.");
-        sendOrUpdateOtp(user);
+
+        // Qeydiyyat OTP-si üçün false
+        sendOrUpdateOtp(user, false);
     }
 
     @Override
@@ -87,10 +89,23 @@ public class UserServiceImpl implements UserService {
     public void forgotPassword(ForgotPasswordRequestDTO request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
-        sendOrUpdateOtp(user);
+
+        // Şifrə sıfırlama olduğu üçün true
+        sendOrUpdateOtp(user, true);
     }
 
-    private void sendOrUpdateOtp(User user) {
+    @Override
+    @Transactional
+    public void resendForgotPasswordOtp(ResendRequestDTO request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
+
+        // Şifrə sıfırlama üçün true
+        sendOrUpdateOtp(user, true);
+    }
+
+    // Əsas OTP göndərmə məntiqi (Dinamik mesajla)
+    private void sendOrUpdateOtp(User user, boolean isResetPassword) {
         VerificationToken token = tokenRepository.findByUser(user)
                 .orElseGet(() -> {
                     VerificationToken newToken = new VerificationToken();
@@ -101,9 +116,20 @@ public class UserServiceImpl implements UserService {
         String otpCode = generateOtp();
         token.setToken(otpCode);
         token.setExpiryDate(LocalDateTime.now().plusMinutes(5));
-
         tokenRepository.save(token);
-        mailService.sendOtpEmail(user.getEmail(), otpCode);
+
+        String subject;
+        String content;
+
+        if (isResetPassword) {
+            subject = "Smart Score - Şifrə Sıfırlama Kodu";
+            content = "Şifrənizi yeniləmək üçün aşağıdakı təsdiq kodunu istifadə edin:";
+        } else {
+            subject = "Smart Score - Email Təsdiqi Kodu (OTP)";
+            content = "Qeydiyyatınızı tamamlamaq üçün aşağıdakı təsdiq kodunu istifadə edin:";
+        }
+
+        mailService.sendOtpEmail(user.getEmail(), otpCode, subject, content);
     }
 
     @Override
@@ -138,7 +164,7 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new UserNotFoundException("Email və ya şifrə yanlışdır."));
 
         if (!user.isVerified()) {
-            sendOrUpdateOtp(user);
+            sendOrUpdateOtp(user, false);
             throw new UserNotVerifiedException("Email təsdiqi tələb olunur. Yeni OTP göndərildi.");
         }
 
@@ -153,27 +179,19 @@ public class UserServiceImpl implements UserService {
         }
     }
 
-    // === 2 PARAMETRLI LOGOUT (Access və Refresh) ===
     @Override
     @Transactional
     public void logout(String authHeader, String refreshToken) {
-        // 1. Refresh Token mütləqdir və yoxlanılmalıdır
         if (refreshToken == null || refreshToken.trim().isEmpty()) {
             throw new InvalidTokenException("Refresh Token tələb olunur.");
         }
 
-        // 2. YOXLANIŞ: findUsername daxilində tokenin vaxtı yoxlanılır.
-        // Əgər tokenin vaxtı bitibsə, sistem dərhal xəta atacaq və
-        // aşağıdakı saveRevokedToken hissələri HİÇ VAXT işləməyəcək (Bazaya insert getməyəcək).
         jwtService.findUsername(refreshToken);
 
-        // 3. Əgər bura gəlib çıxdısa, deməli token hələ keçərlidir.
-        // Access Token ləğvi
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             saveRevokedToken(authHeader.substring(7).trim());
         }
 
-        // Refresh Token ləğvi
         saveRevokedToken(refreshToken.trim());
     }
 
@@ -190,7 +208,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public AuthResponseDTO resetPassword(ResetPasswordRequestDTO request) {
         if (!request.getNewPassword().equals(request.getConfirmPassword())) {
-            throw new RuntimeException("Şifrələr uyğun deyil.");
+            throw new InvalidCredentialsException("Şifrələr uyğun deyil.");
         }
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
@@ -204,7 +222,7 @@ public class UserServiceImpl implements UserService {
         userRepository.save(user);
         tokenRepository.delete(vt);
 
-        return new AuthResponseDTO(true, "Şifrə yeniləndi.");
+        return new AuthResponseDTO(true, "Şifrə uğurla yeniləndi.");
     }
 
     @Override
@@ -252,7 +270,6 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public AuthResponseDTO refreshToken(String refreshToken) {
-        // Logout olmuş Refresh Tokeni bloklayırıq
         if (revokedTokenRepository.existsByToken(refreshToken)) {
             throw new InvalidTokenException("Bu Refresh Token ləğv edilib. Yenidən giriş edin.");
         }

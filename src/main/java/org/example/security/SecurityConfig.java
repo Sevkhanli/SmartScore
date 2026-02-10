@@ -52,7 +52,8 @@ public class SecurityConfig {
                                 "/api/auth/refresh-token",
                                 "/api/auth/google",
                                 "/api/auth/forgot-password",
-                                "/api/auth/reset-password"
+                                "/api/auth/reset-password",
+                                "/api/auth/resend-forgot-password-otp"
                         ).permitAll()
 
                         // 3. Qorunan Auth endpoint-ləri

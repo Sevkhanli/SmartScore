@@ -15,19 +15,21 @@ public class MailServiceImpl implements MailService {
 
     @Override
     @Async
-    public void sendOtpEmail(String toEmail, String otpCode) {
+    public void sendOtpEmail(String toEmail, String otpCode, String subject, String messageContent) {
         SimpleMailMessage message = new SimpleMailMessage();
 
-        // SendGrid-də təsdiqlədiyin maili bura yazırıq
+        // SendGrid və ya digər provayderdədə təsdiqlənmiş göndərən mail
         message.setFrom("sevxanli77@gmail.com");
-
         message.setTo(toEmail);
-        message.setSubject("Smart Score - Email Təsdiqi Kodu (OTP)");
 
+        // Dinamik başlıq (subject)
+        message.setSubject(subject);
+
+        // Dinamik məzmun (messageContent)
         String body = String.format("""
             Hörmətli istifadəçi,
 
-            Qeydiyyatınızı tamamlamaq üçün aşağıdakı təsdiq kodunu istifadə edin:
+            %s
 
             OTP Kodu: %s
 
@@ -35,15 +37,14 @@ public class MailServiceImpl implements MailService {
 
             Hörmətlə,
             Smart Score Komandası
-            """, otpCode);
+            """, messageContent, otpCode);
 
         message.setText(body);
 
         try {
             mailSender.send(message);
-            System.out.println("SUCCESS: OTP kodu " + toEmail + " ünvanına uğurla göndərildi.");
+            System.out.println("SUCCESS: " + subject + " kodu " + toEmail + " ünvanına uğurla göndərildi.");
         } catch (Exception e) {
-            // Əgər nəsə səhv olsa, loqda səbəbini görəcəksən
             System.err.println("ERROR: Mail göndərilərkən xəta baş verdi: " + e.getMessage());
         }
     }

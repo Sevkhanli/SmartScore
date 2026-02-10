@@ -65,6 +65,12 @@ public class AuthController {
         return ResponseEntity.ok(userService.resetPassword(request));
     }
 
+    @PostMapping("/resend-forgot-password-otp")
+    public ResponseEntity<AuthResponseDTO> resendForgotPasswordOtp(@Valid @RequestBody ResendRequestDTO request) {
+        userService.resendForgotPasswordOtp(request);
+        return ResponseEntity.ok(new AuthResponseDTO(true, "Şifrə sıfırlama kodu yenidən email ünvanınıza göndərildi."));
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<String> logout(
             @RequestHeader("Authorization") String authHeader,
