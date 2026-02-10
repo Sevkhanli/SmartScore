@@ -49,6 +49,13 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public AuthResponseDTO registerUser(RegisterRequestDTO request) {
+        // 1. Şifrələrin uyğunluğunu yoxla
+        if (!request.getPassword().equals(request.getConfirmPassword())) {
+            // Mövcud exception-larından birini və ya RuntimeException istifadə edə bilərsən
+            throw new InvalidCredentialsException("Şifrələr bir-biri ilə uyğun gəlmir.");
+        }
+
+        // 2. Email yoxlanışı (mövcud kodun)
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new UserAlreadyExistsException("Bu email artıq qeydiyyatdan keçib.");
         }

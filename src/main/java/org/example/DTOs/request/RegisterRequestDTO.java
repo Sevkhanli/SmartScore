@@ -7,7 +7,6 @@ import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -28,4 +27,8 @@ public class RegisterRequestDTO {
             message = "Şifrədə ən az bir böyük hərf, bir kiçik hərf və bir rəqəm olmalıdır"
     )
     private String password;
+
+    // Yeni əlavə olunan sahə
+    @NotBlank(message = "Şifrə təsdiqi boş ola bilməz")
+    private String confirmPassword;
 }
