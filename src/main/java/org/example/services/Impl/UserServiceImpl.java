@@ -163,9 +163,18 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UserNotFoundException("Email və ya şifrə yanlışdır."));
 
+        // Şifrəni yoxlayırıq ki, hər kəsə boş-boşuna OTP getməsin
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            throw new InvalidCredentialsException("Email və ya şifrə yanlışdır.");
+        }
+
+        // Əgər təsdiqlənməyibsə:
         if (!user.isVerified()) {
-            sendOrUpdateOtp(user, false);
-            throw new UserNotVerifiedException("Email təsdiqi tələb olunur. Yeni OTP göndərildi.");
+            sendOrUpdateOtp(user, false); // Bu metod OTP-ni bazada yeniləyir və mail göndərir
+
+            // BU HİSSƏ ƏSASDIR: 'throw' əvəzinə 'return' istifadə edirik
+            // Beləliklə bazadakı yeni OTP 'rollback' olunmur, yadda qalır.
+            return new AuthResponseDTO(false, "Email təsdiqi tələb olunur. Yeni OTP göndərildi.");
         }
 
         try {
