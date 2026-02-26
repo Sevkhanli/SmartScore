@@ -30,8 +30,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
-                .cors(cors -> cors.configure(http)) // CORS-u aktiv et
-                .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configure(http)) // CORS-a toxunmadım
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         // 1. Swagger üçün icazələr
@@ -56,10 +55,18 @@ public class SecurityConfig {
                                 "/api/auth/resend-forgot-password-otp"
                         ).permitAll()
 
-                        // 3. Qorunan Auth endpoint-ləri
+                        // 3. Landing Page (Hero) icazələri
+                        .requestMatchers("/api/v1/hero/active").permitAll()
+                        .requestMatchers("/api/v1/hero/admin/**").hasRole("ADMIN")
+
+                        // 4. "Necə işləyir?" (Features) bölməsi üçün (Indidən əlavə edək)
+                        .requestMatchers("/api/v1/features/public/**").permitAll()
+                        .requestMatchers("/api/v1/features/admin/**").hasRole("ADMIN")
+
+                        // 5. Qorunan Auth endpoint-ləri
                         .requestMatchers("/api/auth/me", "/api/auth/logout").authenticated()
 
-                        // 4. Qalan hər şey qorunur
+                        // 6. Qalan hər şey (ƏN SONDA OLMALIDIR)
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

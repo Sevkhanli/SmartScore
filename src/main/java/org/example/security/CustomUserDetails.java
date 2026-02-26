@@ -17,7 +17,8 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority(user.getRole().name()));
+        // Spring Security hasRole("ADMIN") üçün mütləq "ROLE_ADMIN" gözləyir
+        return List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
     }
 
     @Override
@@ -30,14 +31,11 @@ public class CustomUserDetails implements UserDetails {
         return user.getEmail();
     }
 
-    // 🛑 ƏSAS DÜZƏLİŞ: Hesabın aktiv (təsdiqlənmiş) olub-olmadığını yoxlayır.
-    // Bu metod `false` qaytarsa, Spring Security DisabledException atır.
     @Override
     public boolean isEnabled() {
         return user.isVerified();
     }
 
-    // Bu metodları əvvəlki kimi `true` olaraq saxlayırıq (və ya sadələşdiririk)
     @Override
     public boolean isAccountNonExpired() {
         return true;
