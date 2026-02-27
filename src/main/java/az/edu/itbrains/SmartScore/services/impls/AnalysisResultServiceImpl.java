@@ -132,18 +132,20 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
     @Transactional
     public AnalysisResultDto processAndAnalyze(MultipartFile file) {
         try {
+            // 1. Faylı saxlamaq üçün qovluq hazırlığı
             String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
             java.io.File uploadDir = new java.io.File("uploads");
             if (!uploadDir.exists()) uploadDir.mkdirs();
 
-            // Объявляем destination
             java.io.File destination = new java.io.File(uploadDir.getAbsolutePath() + java.io.File.separator + fileName);
             file.transferTo(destination);
 
             User currentUser = userService.getCurrentUser();
+
+            // 2. Bazada qeyd yaradırıq
             StatementFile statementFile = new StatementFile();
             statementFile.setOriginalFileName(fileName);
-            statementFile.setStoredFilePath(destination.getAbsolutePath());
+            statementFile.setStoredFilePath(destination.getAbsolutePath()); // Tam yolu bura yazırıq
             statementFile.setFileType("application/pdf");
             statementFile.setStatus(az.edu.itbrains.SmartScore.enums.StatementFileStatus.COMPLETED);
             statementFile.setUser(currentUser);
@@ -151,15 +153,13 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
 
             statementFile = statementFileRepository.save(statementFile);
 
-            // --- ТЕПЕРЬ ВСЁ БУДЕТ ВИДНО ---
-
-            // 1. Извлекаем текст
+            // 3. PDF-dən mətni OXUYURUQ (Bura diqqət: destination.getAbsolutePath() istifadə edirik)
             String rawText = pdfService.extractText(destination.getAbsolutePath());
 
-            // 2. Отправляем в ИИ (теперь gptService виден!)
+            // 4. AI-a göndəririk
             List<Transaction> transactions = gptService.analyzeStatementAndGetTransactions(rawText);
 
-            // 3. Сохраняем транзакции
+            // 5. Transaction-ları bazaya yazırıq
             for (Transaction tx : transactions) {
                 tx.setStatementFile(statementFile);
                 tx.setUser(currentUser);
@@ -167,50 +167,79 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
             transactionRepository.saveAll(transactions);
             transactionRepository.flush();
 
+            // 6. Hesablama hissəsini çağırırıq
             return calculateScore(currentUser);
 
         } catch (Exception e) {
             e.printStackTrace();
-            throw new RuntimeException("Xəta: " + e.getMessage());
+            throw new RuntimeException("Fayl emal edilərkən xəta: " + e.getMessage());
         }
     }
-
 
     @Override
     public AnalysisResultDto getLatestResultForUser() {
         User currentUser = userService.getCurrentUser();
-        return analysisResultRepository.findTopByUserIdOrderByCalculatedAtDesc(currentUser.getId())
-                .map(entity -> modelMapper.map(entity, AnalysisResultDto.class))
-                .orElse(new AnalysisResultDto());
+
+        // findTopByUserIdOrderByCalculatedAtDesc metodu Optional qaytarır.
+        // .orElseThrow() əlavə etmək 'java.lang.Object' tapıldı xətasını həll edir.
+        AnalysisResult entity = analysisResultRepository
+                .findTopByUserIdOrderByCalculatedAtDesc(currentUser.getId())
+                .orElseThrow(() -> new RuntimeException("Heç bir analiz nəticəsi tapılmadı."));
+
+        // İndi isə hər bir sahəni manual olaraq DTO-ya köçürürük.
+        // Bu, o qəribə milyardlıq rəqəmin yaranmasının qarşısını alır.
+        AnalysisResultDto dto = new AnalysisResultDto();
+        dto.setScore(entity.getScore());
+        dto.setIncomeStability(entity.getIncomeStability());
+        dto.setExpenseControl(entity.getExpenseControl());
+        dto.setBalanceDynamics(entity.getBalanceDynamics());
+        dto.setPaymentHistory(entity.getPaymentHistory());
+        dto.setPeriodMonths(entity.getPeriodMonths());
+
+        return dto;
     }
 
     // ✅ БРОНЕБОЙНЫЙ ХРОНОЛОГИЧЕСКИЙ СКАНЕР PDF
     private PdfData extractAllFromPdf(StatementFile file) {
         PdfData data = new PdfData();
         try {
-            String filePath = "uploads/" + file.getOriginalFileName();
-            String rawText = pdfService.extractText(filePath);
-            if (rawText == null || rawText.isBlank()) return data;
+            // 1. Faylın yolunu birbaşa obyektdən alırıq (UUID problemi yaşamamaq üçün)
+            String filePath = file.getStoredFilePath();
 
+            // 2. PDF-dən mətni çıxarırıq
+            String rawText = pdfService.extractText(filePath);
+            if (rawText == null || rawText.isBlank()) {
+                System.err.println("LOG: PDF mətni boşdur və ya fayl oxunmadı!");
+                return data;
+            }
+
+            // Mətndəki xüsusi simvolları təmizləyirik (RegEx-in düzgün tutması üçün)
             String textFixed = rawText.replace("\r", " ").replace("\u00A0", " ");
 
-            // 1. ВЫТЯГИВАЕМ ШАПКУ
+            // 3. REGEX İLƏ ÜMUMİ MƏLUMATLARIN ÇIXARILMASI
+            // Mədaxil cəmi
             Matcher mInc = Pattern.compile("mədaxil.*?cəmi.*?(\\d+[\\.,]\\d{2})", Pattern.CASE_INSENSITIVE).matcher(textFixed);
             if (mInc.find()) data.totalIncome = new BigDecimal(mInc.group(1).replace(',', '.'));
 
+            // Məxaric cəmi
             Matcher mExp = Pattern.compile("məxaric.*?cəmi.*?(\\d+[\\.,]\\d{2})", Pattern.CASE_INSENSITIVE).matcher(textFixed);
             if (mExp.find()) data.totalExpense = new BigDecimal(mExp.group(1).replace(',', '.'));
 
+            // Əvvəlində qalıq
             Matcher mOpen = Pattern.compile("əvvəlində qalıq.*?([+-]?\\d+[\\.,]\\d{2})", Pattern.CASE_INSENSITIVE).matcher(textFixed);
             if (mOpen.find()) data.openingBalance = new BigDecimal(mOpen.group(1).replace(',', '.'));
 
+            // Sonunda qalıq
             Matcher mClose = Pattern.compile("sonunda qalıq.*?([+-]?\\d+[\\.,]\\d{2})", Pattern.CASE_INSENSITIVE).matcher(textFixed);
             if (mClose.find()) data.closingBalance = new BigDecimal(mClose.group(1).replace(',', '.'));
 
-            // 2. СКАНИРУЕМ СЛОВО ЗА СЛОВОМ ДЛЯ СБОРА МЕСЯЧНОГО ДОХОДА
+            // 4. AYLAR ÜZRƏ GƏLİRLƏRİN SKAN EDİLMƏSİ (Tokenization)
             String[] tokens = textFixed.split("[\\s\\n\\r\",]+");
             YearMonth currentMonth = null;
+
+            // Tarix formatı (məsələn: 12-05-2023)
             Pattern dateP = Pattern.compile("^(\\d{2})-(\\d{2})-(\\d{4})$");
+            // Məbləğ formatı (məsələn: +1500.00)
             Pattern amountP = Pattern.compile("^([+-])(\\d+[\\.,]\\d{2})$");
 
             for (String token : tokens) {
@@ -225,21 +254,23 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
                 Matcher aMatch = amountP.matcher(token);
                 if (aMatch.matches() && currentMonth != null) {
                     BigDecimal val = new BigDecimal(aMatch.group(2).replace(',', '.'));
+                    // Yalnız mədaxilləri (+) aylıq gəlirə əlavə edirik
                     if (aMatch.group(1).equals("+")) {
                         data.monthlyIncomes.put(currentMonth, data.monthlyIncomes.getOrDefault(currentMonth, BigDecimal.ZERO).add(val));
                     }
                 }
             }
 
-            System.out.println("LOG PDF DATA: Доход=" + data.totalIncome + ", Расход=" + data.totalExpense + ", Старт=" + data.openingBalance + ", Финиш=" + data.closingBalance);
-            System.out.println("LOG PDF ДОХОДЫ ПО МЕСЯЦАМ: " + data.monthlyIncomes);
+            // Konsolda nəticələri yoxlamaq üçün
+            System.out.println("LOG PDF DATA: Gəlir=" + data.totalIncome + ", Xərc=" + data.totalExpense + ", Start=" + data.openingBalance + ", Son=" + data.closingBalance);
+            System.out.println("LOG PDF AYLAR ÜZRƏ: " + data.monthlyIncomes);
 
         } catch (Exception e) {
-            System.err.println("Cannot extract PDF data: " + e.getMessage());
+            System.err.println("PDF-dən data çıxarılarkən ciddi xəta: " + e.getMessage());
+            e.printStackTrace();
         }
         return data;
     }
-
     private static class PdfData {
         BigDecimal totalIncome = BigDecimal.ZERO;
         BigDecimal totalExpense = BigDecimal.ZERO;
