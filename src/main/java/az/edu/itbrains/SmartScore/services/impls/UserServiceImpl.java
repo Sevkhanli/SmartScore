@@ -11,14 +11,15 @@ import az.edu.itbrains.SmartScore.repositories.RevokedTokenRepository;
 import az.edu.itbrains.SmartScore.repositories.UserRepository;
 import az.edu.itbrains.SmartScore.repositories.VerificationTokenRepository;
 import az.edu.itbrains.SmartScore.security.JwtService;
+import az.edu.itbrains.SmartScore.services.AnalysisResultService;
 import az.edu.itbrains.SmartScore.services.MailService;
 import az.edu.itbrains.SmartScore.services.UserService;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
@@ -33,7 +34,6 @@ import java.util.Random;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
@@ -43,6 +43,26 @@ public class UserServiceImpl implements UserService {
     private final JwtService jwtService;
     private final VerificationTokenRepository tokenRepository;
     private final RevokedTokenRepository revokedTokenRepository;
+    private final AnalysisResultService analysisResultService;
+
+    public UserServiceImpl(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            MailService mailService,
+            AuthenticationManager authenticationManager,
+            JwtService jwtService,
+            VerificationTokenRepository tokenRepository,
+            RevokedTokenRepository revokedTokenRepository,
+            @Lazy AnalysisResultService analysisResultService) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.mailService = mailService;
+        this.authenticationManager = authenticationManager;
+        this.jwtService = jwtService;
+        this.tokenRepository = tokenRepository;
+        this.revokedTokenRepository = revokedTokenRepository;
+        this.analysisResultService = analysisResultService;
+    }
 
     @Value("${google.id}")
     private String googleClientId;
@@ -274,11 +294,20 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public AuthResponseDTO getUserProfile(String email) {
-        User user = userRepository.findByEmail(email).orElseThrow(() -> new UserNotFoundException("Tapılmadı."));
-        AuthResponseDTO resp = new AuthResponseDTO(true, "Uğurlu.");
+        // 1. İstifadəçini bazadan tapırıq
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
+
+        // 2. Dostunun yazdığı metodu çağırırıq (Analiz sayı və tarixçə buradan gəlir)
+        AuthResponseDTO resp = analysisResultService.getUserProfileData();
+
+        // 3. Sənin tərəfdə olan əsas məlumatları bu obyektin içinə doldururuq
+        resp.setSuccess(true);
+        resp.setMessage("Profil məlumatları uğurlu.");
         resp.setFullName(user.getFullName());
         resp.setEmail(user.getEmail());
         resp.setCreatedAt(user.getCreatedAt());
+
         return resp;
     }
 

@@ -83,7 +83,7 @@ public class AuthController {
 
     @GetMapping("/me")
     public ResponseEntity<AuthResponseDTO> getMyProfile() {
-        // Token-dən gələn email məlumatını götürürük
+        // 1. Token-dən gələn email məlumatını götürürük
         org.springframework.security.core.Authentication auth =
                 SecurityContextHolder.getContext().getAuthentication();
 
@@ -93,7 +93,10 @@ public class AuthController {
         }
 
         String email = auth.getName();
-        // Servisdən gələn cavabı birbaşa qaytarırıq
+
+        // 2. BURADA DİQQƏT: userService.getUserProfile(email) çağırıldıqda
+        // sənin o şəkildə atdığın (sətir 93-110) kod işə düşəcək.
+        // Həmin kod isə həm user, həm də analiz datalarını bir yerdə qaytarır.
         return ResponseEntity.ok(userService.getUserProfile(email));
     }
     }

@@ -1,6 +1,8 @@
 package az.edu.itbrains.SmartScore.services.impls;
 
+import az.edu.itbrains.SmartScore.dtos.analysisResult.AnalysisHistoryItemDto;
 import az.edu.itbrains.SmartScore.dtos.analysisResult.AnalysisResultDto;
+import az.edu.itbrains.SmartScore.dtos.response.AuthResponseDTO;
 import az.edu.itbrains.SmartScore.enums.CategoryType;
 import az.edu.itbrains.SmartScore.models.AnalysisResult;
 import az.edu.itbrains.SmartScore.models.StatementFile;
@@ -15,12 +17,14 @@ import az.edu.itbrains.SmartScore.services.PdfService;
 import az.edu.itbrains.SmartScore.services.UserService;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -30,7 +34,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
-@RequiredArgsConstructor
+//@RequiredArgsConstructor
 public class AnalysisResultServiceImpl implements AnalysisResultService {
 
     private final ModelMapper modelMapper;
@@ -40,6 +44,24 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
     private final PdfService pdfService;
     private final GptService gptService;
     private final UserService userService;
+
+    // 3. Constructor-u əllə yazırıq ki, @Lazy parametr səviyyəsində işləsin
+    public AnalysisResultServiceImpl(
+            ModelMapper modelMapper,
+            TransactionRepository transactionRepository,
+            StatementFileRepository statementFileRepository,
+            AnalysisResultRepository analysisResultRepository,
+            PdfService pdfService,
+            GptService gptService,
+            @Lazy UserService userService) { // <--- @Lazy mütləq buradadır
+        this.modelMapper = modelMapper;
+        this.transactionRepository = transactionRepository;
+        this.statementFileRepository = statementFileRepository;
+        this.analysisResultRepository = analysisResultRepository;
+        this.pdfService = pdfService;
+        this.gptService = gptService;
+        this.userService = userService;
+    }
 
     private static final Set<CategoryType> EXPENSE_CATS = Set.of(
             CategoryType.DAILY, CategoryType.ESSENTIAL, CategoryType.CREDIT
@@ -198,6 +220,56 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
 
         return dto;
     }
+
+    @Override
+    public AuthResponseDTO getUserProfileData() {
+        User user = userService.getCurrentUser();
+        if (user == null) {
+            throw new RuntimeException("İstifadəçi tapılmadı");
+        }
+
+        List<AnalysisResult> results = user.getAnalysisResults();
+
+        AuthResponseDTO profileDto = new AuthResponseDTO();
+        profileDto.setTotalAnalyses(results.size()); // "Cəmi analiz"
+
+        if (!results.isEmpty()){
+            AnalysisResult latest = results.get(0);
+            profileDto.setLastResult(latest.getScore() + "%");
+            profileDto.setLastAnalysisDate(formatDate(latest.getCalculatedAt()));
+        }
+
+        List<AnalysisHistoryItemDto> historyDtos = results.stream()
+                .map(result -> {
+                    AnalysisHistoryItemDto item = new AnalysisHistoryItemDto();
+                    item.setDate(formatDate(result.getCalculatedAt()));
+                    item.setTime(formatTime(result.getCalculatedAt()));
+                    item.setScore(result.getScore());
+
+                    item.setStatus(result.getScore() > 70 ? "Yüksək" : "Normal");
+                    return item;
+                })
+                .toList();
+
+        profileDto.setHistory(historyDtos);
+
+        return profileDto;
+    }
+
+    private String formatDate(Date date) {
+        if (date == null) return "Məlumat yoxdur";
+        // Формат: 15 Yanvar 2025
+        SimpleDateFormat sdf = new SimpleDateFormat("dd MMMM yyyy", new Locale("az"));
+        return sdf.format(date);
+    }
+
+    private String formatTime(Date date) {
+        if (date == null) return "00:00";
+        // Формат: 14:30
+        SimpleDateFormat sdf = new SimpleDateFormat("HH:mm");
+        return sdf.format(date);
+    }
+
 
     // ✅ БРОНЕБОЙНЫЙ ХРОНОЛОГИЧЕСКИЙ СКАНЕР PDF
     private PdfData extractAllFromPdf(StatementFile file) {

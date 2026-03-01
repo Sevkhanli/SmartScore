@@ -8,6 +8,8 @@ import lombok.NoArgsConstructor;
 import az.edu.itbrains.SmartScore.enums.Role;
 import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 @Entity
@@ -42,4 +44,8 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false)
     private Role role;
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OrderBy("calculatedAt DESC")
+    private List<AnalysisResult> analysisResults = new ArrayList<>();
 }

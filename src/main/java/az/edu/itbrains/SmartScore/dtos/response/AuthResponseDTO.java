@@ -1,5 +1,6 @@
 package az.edu.itbrains.SmartScore.dtos.response;
 
+import az.edu.itbrains.SmartScore.dtos.analysisResult.AnalysisHistoryItemDto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonInclude; // 1. BU İMPORTU ƏLAVƏ EDİN
 import lombok.AllArgsConstructor;
@@ -7,11 +8,13 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 // 2. BU ANOTASİYANI ƏLAVƏ EDİN
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Data
 @NoArgsConstructor
+@AllArgsConstructor
 public class AuthResponseDTO {
 
     private Boolean success;
@@ -25,6 +28,12 @@ public class AuthResponseDTO {
     private String email;
     @JsonFormat(pattern = "dd.MM.yyyy") // Məsələn: 16.01.2026
     private LocalDateTime createdAt;
+
+    //UserProfileDto-dan gələn hissələr (Profil üçün)
+    private Integer totalAnalyses;
+    private String lastResult;
+    private String lastAnalysisDate;
+    private List<AnalysisHistoryItemDto> history;
 
     // 1. Register, Verify və ya xəta üçün konstruktor (tokenlər null olacaq)
     public AuthResponseDTO(Boolean success, String message) {
