@@ -1,10 +1,11 @@
 package az.edu.itbrains.SmartScore.services.impls;
 
-import lombok.RequiredArgsConstructor;
+import az.edu.itbrains.SmartScore.dtos.emailMessage.EmailMessage;
 import az.edu.itbrains.SmartScore.services.MailService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -13,19 +14,31 @@ public class MailServiceImpl implements MailService {
 
     private final JavaMailSender mailSender;
 
+    /**
+     * RabbitMQ-dan gələn mesajları dinləyən metod.
+     * "email_queue" növbəsinə mesaj düşən kimi bura işə düşür.
+     */
+    @RabbitListener(queues = "email_queue")
+    public void receiveEmailMessage(EmailMessage emailData) {
+        System.out.println("DEBUG: RabbitMQ-dan mesaj gəldi. Göndərilir: " + emailData.getToEmail());
+
+        // Həqiqi mail göndərmə metodunu çağırırıq
+        sendOtpEmail(
+                emailData.getToEmail(),
+                emailData.getOtpCode(),
+                emailData.getSubject(),
+                emailData.getMessageContent()
+        );
+    }
+
     @Override
-    @Async
     public void sendOtpEmail(String toEmail, String otpCode, String subject, String messageContent) {
         SimpleMailMessage message = new SimpleMailMessage();
 
-        // SendGrid və ya digər provayderdədə təsdiqlənmiş göndərən mail
         message.setFrom("sevxanli77@gmail.com");
         message.setTo(toEmail);
-
-        // Dinamik başlıq (subject)
         message.setSubject(subject);
 
-        // Dinamik məzmun (messageContent)
         String body = String.format("""
             Hörmətli istifadəçi,
 

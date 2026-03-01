@@ -1,5 +1,6 @@
 package az.edu.itbrains.SmartScore.services.impls;
 
+import az.edu.itbrains.SmartScore.dtos.emailMessage.EmailMessage; // Yeni yaratdığın DTO
 import az.edu.itbrains.SmartScore.dtos.request.*;
 import az.edu.itbrains.SmartScore.dtos.response.AuthResponseDTO;
 import az.edu.itbrains.SmartScore.enums.Role;
@@ -18,6 +19,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
+import org.springframework.amqp.rabbit.core.RabbitTemplate; // RabbitMQ üçün
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -44,6 +46,7 @@ public class UserServiceImpl implements UserService {
     private final VerificationTokenRepository tokenRepository;
     private final RevokedTokenRepository revokedTokenRepository;
     private final AnalysisResultService analysisResultService;
+    private final RabbitTemplate rabbitTemplate; // 1. RabbitTemplate əlavə edildi
 
     public UserServiceImpl(
             UserRepository userRepository,
@@ -53,7 +56,8 @@ public class UserServiceImpl implements UserService {
             JwtService jwtService,
             VerificationTokenRepository tokenRepository,
             RevokedTokenRepository revokedTokenRepository,
-            @Lazy AnalysisResultService analysisResultService) {
+            @Lazy AnalysisResultService analysisResultService,
+            RabbitTemplate rabbitTemplate) { // 2. Constructor-a əlavə edildi
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.mailService = mailService;
@@ -62,13 +66,13 @@ public class UserServiceImpl implements UserService {
         this.tokenRepository = tokenRepository;
         this.revokedTokenRepository = revokedTokenRepository;
         this.analysisResultService = analysisResultService;
+        this.rabbitTemplate = rabbitTemplate; // 3. Set edildi
     }
 
     @Value("${google.id}")
     private String googleClientId;
 
-    // --- RAMILIN METODLARI (SADELEŞDIRILMIŞ VƏ OPTIONAL-A UYĞUNLAŞDIRILMIŞ) ---
-
+    // --- RAMILIN METODLARI ---
     @Override
     public User findByTelegramChatId(Long chatId) {
         return userRepository.findByTelegramChatId(chatId).orElse(null);
@@ -90,8 +94,7 @@ public class UserServiceImpl implements UserService {
         return userRepository.findByEmail(email).orElse(null);
     }
 
-    // --- SƏNIN METODLARIN (AUTH MƏNTİQİ) ---
-
+    // --- AUTH MƏNTİQİ ---
     @Override
     @Transactional
     public AuthResponseDTO registerUser(RegisterRequestDTO request) {
@@ -161,7 +164,11 @@ public class UserServiceImpl implements UserService {
         String subject = isResetPassword ? "Smart Score - Şifrə Sıfırlama Kodu" : "Smart Score - Email Təsdiqi Kodu (OTP)";
         String content = isResetPassword ? "Şifrənizi yeniləmək üçün kod:" : "Qeydiyyatınızı tamamlamaq üçün kod:";
 
-        mailService.sendOtpEmail(user.getEmail(), otpCode, subject, content);
+        // 4. DƏYİŞİKLİK BURADADIR: Birbaşa mail göndərmirik, RabbitMQ növbəsinə atırıq
+        EmailMessage emailTask = new EmailMessage(user.getEmail(), otpCode, subject, content);
+        rabbitTemplate.convertAndSend("email_queue", emailTask);
+
+        System.out.println("DEBUG: Email tapşırığı RabbitMQ-ya (email_queue) göndərildi: " + user.getEmail());
     }
 
     @Override
@@ -294,14 +301,11 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public AuthResponseDTO getUserProfile(String email) {
-        // 1. İstifadəçini bazadan tapırıq
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UserNotFoundException("İstifadəçi tapılmadı."));
 
-        // 2. Dostunun yazdığı metodu çağırırıq (Analiz sayı və tarixçə buradan gəlir)
         AuthResponseDTO resp = analysisResultService.getUserProfileData();
 
-        // 3. Sənin tərəfdə olan əsas məlumatları bu obyektin içinə doldururuq
         resp.setSuccess(true);
         resp.setMessage("Profil məlumatları uğurlu.");
         resp.setFullName(user.getFullName());
