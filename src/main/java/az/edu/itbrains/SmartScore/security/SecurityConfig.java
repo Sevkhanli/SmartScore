@@ -45,6 +45,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/v1/hero/active").permitAll()
                         .requestMatchers("/api/v1/features/public/**").permitAll()
+                        .requestMatchers("/api/v1/contact/**").permitAll() // <--- Bura əlavə edildi
 
                         // 3. Analiz API-ları (Bunu əlavə etdim ki, test edə biləsən)
                         .requestMatchers("/api/analysis/**").permitAll()
@@ -69,7 +70,6 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
-
     // WebSecurityCustomizer-i sildim, çünki permitAll() artıq yuxarıda həmin işi görür və xəta vermir.
 
     @Bean
