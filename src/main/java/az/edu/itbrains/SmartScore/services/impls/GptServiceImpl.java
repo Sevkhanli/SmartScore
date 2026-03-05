@@ -25,37 +25,37 @@ public class GptServiceImpl implements GptService {
     }
 
     private static final String SYSTEM_PROMPT_TEMPLATE = """
-    You are a professional bank statement data extractor.
-    Extract EVERY transaction line. 
-
-    CRITICAL DATE & TIME RULES:
-    1. YEARS: Use ONLY the years found in the text: %s.
-    2. TIME: You MUST extract the exact time (HH:mm:ss) for each row (e.g., 21:06:34).
-    3. FORMAT: operationDate must be "yyyy-MM-ddTHH:mm:ss".
-    
-    DUPLICATE RULE:
-    - If there are multiple identical amounts on the same day (e.g., three "+20.00"), you MUST extract each one separately. DO NOT skip any.
-
-    CATEGORIZATION:
-    - "+" amounts = "INCOME".
-    - "-" amounts = "DAILY", "ESSENTIAL" (P2P, bills, ATM), or "CREDIT".
-    CRITICAL RESTRICTION: Use "CREDIT" ONLY for official bank loan payments. DO NOT use "CREDIT" for rent (e.g., "ICARA"), subscriptions, or regular transfers. If in doubt, use "ESSENTIAL" or "DAILY".
-
-    JSON STRUCTURE (MANDATORY):
-    Return ONLY a valid JSON array of objects with these exact keys:
-    - "amount": decimal number (positive for income, negative for expense).
-    - "description": string (ACTUAL merchant name or transaction text from the statement). MUST NOT BE NULL.
-    - "category": string (INCOME, DAILY, ESSENTIAL, or CREDIT).
-    - "operationDate": string (yyyy-MM-ddTHH:mm:ss).
-
-    Example:
-    [
-      {"amount": 20.00, "description": "www.birbank.az", "category": "INCOME", "operationDate": "2025-11-30T21:06:34"},
-      {"amount": 400.00, "description": "eManat", "category": "INCOME", "operationDate": "2025-11-30T22:15:00"}
-    ]
-    
-    Return ONLY the JSON array. Do not include markdown or text.
-    """;
+            You are a professional bank statement data extractor.
+            Extract EVERY transaction line. 
+            
+            CRITICAL DATE & TIME RULES:
+            1. YEARS: Use ONLY the years found in the text: %s.
+            2. TIME: You MUST extract the exact time (HH:mm:ss) for each row (e.g., 21:06:34).
+            3. FORMAT: operationDate must be "yyyy-MM-ddTHH:mm:ss".
+            
+            DUPLICATE RULE:
+            - If there are multiple identical amounts on the same day (e.g., three "+20.00"), you MUST extract each one separately. DO NOT skip any.
+            
+            CATEGORIZATION:
+            - "+" amounts = "INCOME".
+            - "-" amounts = "DAILY", "ESSENTIAL" (P2P, bills, ATM), or "CREDIT".
+            CRITICAL RESTRICTION: Use "CREDIT" ONLY for official bank loan payments. DO NOT use "CREDIT" for rent (e.g., "ICARA"), subscriptions, or regular transfers. If in doubt, use "ESSENTIAL" or "DAILY".
+            
+            JSON STRUCTURE (MANDATORY):
+            Return ONLY a valid JSON array of objects with these exact keys:
+            - "amount": decimal number (positive for income, negative for expense).
+            - "description": string (ACTUAL merchant name or transaction text from the statement). MUST NOT BE NULL.
+            - "category": string (INCOME, DAILY, ESSENTIAL, or CREDIT).
+            - "operationDate": string (yyyy-MM-ddTHH:mm:ss).
+            
+            Example:
+            [
+              {"amount": 20.00, "description": "www.birbank.az", "category": "INCOME", "operationDate": "2025-11-30T21:06:34"},
+              {"amount": 400.00, "description": "eManat", "category": "INCOME", "operationDate": "2025-11-30T22:15:00"}
+            ]
+            
+            Return ONLY the JSON array. Do not include markdown or text.
+            """;
 
     @Override
     public List<TransactionDto> analyzeStatement(String extractedText) {
@@ -64,12 +64,13 @@ public class GptServiceImpl implements GptService {
         String documentYears = extractYearsFromText(extractedText);
         String dynamicPrompt = String.format(SYSTEM_PROMPT_TEMPLATE, documentYears);
 
-        List<String> chunks = splitByNewlineWithOverlap(extractedText, 2000, 400);
+        // Золотая середина: 7000 символов, перекрытие 500
+        List<String> chunks = splitByNewlineWithOverlap(extractedText, 7000, 500);
         List<TransactionDto> allRaw = new ArrayList<>();
 
         for (String part : chunks) {
             try {
-                System.out.println("LOG: Отправляю запрос в OpenAI..."); // Проверка начала
+                System.out.println("LOG: Отправляю чанк (" + part.length() + " симв.) в OpenAI...");
 
                 String raw = chatClient.prompt()
                         .system(dynamicPrompt)
@@ -77,13 +78,17 @@ public class GptServiceImpl implements GptService {
                         .call()
                         .content();
 
-                System.out.println("LOG AI RESPONSE: " + raw); // Проверка ответа
-
                 List<TransactionDto> res = safeParse(extractJsonArray(raw));
                 if (res != null) allRaw.addAll(res);
+
+                // Пауза 1.5 секунды, чтобы OpenAI не ругался на RPM
+                Thread.sleep(1500);
+
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
             } catch (Exception e) {
-                System.err.println("!!! КРИТИЧЕСКАЯ ОШИБКА ИИ !!!");
-                e.printStackTrace();
+                System.err.println("!!! ОШИБКА ЧАНКА !!!");
+                // Если чанк упал из-за квоты, мы хотя бы сохраним то, что уже успели собрать
             }
         }
 
@@ -188,7 +193,8 @@ public class GptServiceImpl implements GptService {
 
     private List<TransactionDto> safeParse(String json) {
         try {
-            return mapper.readValue(json, new TypeReference<>() {});
+            return mapper.readValue(json, new TypeReference<>() {
+            });
         } catch (Exception e) {
             return List.of();
         }
