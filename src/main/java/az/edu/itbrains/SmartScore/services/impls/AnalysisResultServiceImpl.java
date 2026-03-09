@@ -269,7 +269,7 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
             item.setDate(formatDate(result.getCalculatedAt()));
             item.setTime(formatTime(result.getCalculatedAt()));
             item.setScore(result.getScore());
-            item.setStatus(result.getScore() >= 69 ? "Yüksək" : (result.getScore() >= 39 ? "Normal" : "Pis"));
+            item.setStatus(result.getScore() >= 69 ? "Yüksək" : (result.getScore() >= 39 ? "Orta" : "Aşağı"));
             return item;
         }).toList());
 
