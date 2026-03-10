@@ -178,12 +178,12 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
     @Transactional
     public AnalysisResultDto processAndAnalyze(MultipartFile file) {
         try {
-            // 1. Faylı saxlamaq üçün qovluq hazırlığı
+            // 1. Render-ə uyğun tmp qovluq
             String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
-            java.io.File uploadDir = new java.io.File("uploads");
+            java.io.File uploadDir = new java.io.File(System.getProperty("java.io.tmpdir"), "uploads");
             if (!uploadDir.exists()) uploadDir.mkdirs();
 
-            java.io.File destination = new java.io.File(uploadDir.getAbsolutePath() + java.io.File.separator + fileName);
+            java.io.File destination = new java.io.File(uploadDir, fileName);
             file.transferTo(destination);
 
             User currentUser = userService.getCurrentUser();
@@ -191,7 +191,7 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
             // 2. Bazada qeyd yaradırıq
             StatementFile statementFile = new StatementFile();
             statementFile.setOriginalFileName(fileName);
-            statementFile.setStoredFilePath(destination.getAbsolutePath()); // Tam yolu bura yazırıq
+            statementFile.setStoredFilePath(destination.getAbsolutePath());
             statementFile.setFileType("application/pdf");
             statementFile.setStatus(az.edu.itbrains.SmartScore.enums.StatementFileStatus.COMPLETED);
             statementFile.setUser(currentUser);
@@ -199,8 +199,12 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
 
             statementFile = statementFileRepository.save(statementFile);
 
-            // 3. PDF-dən mətni OXUYURUQ (Bura diqqət: destination.getAbsolutePath() istifadə edirik)
+            // 3. PDF-dən mətni oxuyuruq
             String rawText = pdfService.extractText(destination.getAbsolutePath());
+
+            if (rawText == null || rawText.isBlank()) {
+                throw new RuntimeException("PDF faylının məzmunu oxuna bilmədi.");
+            }
 
             // 4. AI-a göndəririk
             List<Transaction> transactions = gptService.analyzeStatementAndGetTransactions(rawText);
@@ -221,7 +225,6 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
             throw new RuntimeException("Fayl emal edilərkən xəta: " + e.getMessage());
         }
     }
-
 
     @Override
     public AnalysisResultDto getLatestResultForUser() {
