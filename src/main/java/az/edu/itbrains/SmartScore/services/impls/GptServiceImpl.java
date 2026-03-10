@@ -64,7 +64,6 @@ public class GptServiceImpl implements GptService {
         String documentYears = extractYearsFromText(extractedText);
         String dynamicPrompt = String.format(SYSTEM_PROMPT_TEMPLATE, documentYears);
 
-        // Золотая середина: 7000 символов, перекрытие 500
         List<String> chunks = splitByNewlineWithOverlap(extractedText, 7000, 500);
         List<TransactionDto> allRaw = new ArrayList<>();
 
@@ -78,17 +77,18 @@ public class GptServiceImpl implements GptService {
                         .call()
                         .content();
 
+                System.out.println("LOG: GPT cavabi: " + raw);
+
                 List<TransactionDto> res = safeParse(extractJsonArray(raw));
                 if (res != null) allRaw.addAll(res);
 
-                // Пауза 1.5 секунды, чтобы OpenAI не ругался на RPM
                 Thread.sleep(1500);
 
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
             } catch (Exception e) {
-                System.err.println("!!! ОШИБКА ЧАНКА !!!");
-                // Если чанк упал из-за квоты, мы хотя бы сохраним то, что уже успели собрать
+                System.err.println("!!! ОШИБКА ЧАНКА: " + e.getClass().getName() + " - " + e.getMessage());
+                e.printStackTrace();
             }
         }
 
@@ -193,10 +193,12 @@ public class GptServiceImpl implements GptService {
 
     private List<TransactionDto> safeParse(String json) {
         try {
-            return mapper.readValue(json, new TypeReference<>() {
-            });
+            return mapper.readValue(json, new TypeReference<>() {});
         } catch (Exception e) {
+            System.err.println("!!! PARSE XETASI: " + e.getMessage());
+            System.err.println("!!! JSON: " + json);
             return List.of();
         }
+
     }
 }
