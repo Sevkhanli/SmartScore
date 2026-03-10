@@ -82,7 +82,7 @@ public class GptServiceImpl implements GptService {
                 List<TransactionDto> res = safeParse(extractJsonArray(raw));
                 if (res != null) allRaw.addAll(res);
 
-                Thread.sleep(1500);
+                Thread.sleep(200);
 
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
