@@ -21,7 +21,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-
+import java.util.TimeZone;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
@@ -153,7 +153,15 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
         entity.setPeriodMonths(Math.max(1, months.size()));
         analysisResultRepository.saveAndFlush(entity);
 
-        return modelMapper.map(entity, AnalysisResultDto.class);
+        // BURAYA AT - köhnə sətri sil, bunu yaz:
+        AnalysisResultDto dto = new AnalysisResultDto();
+        dto.setScore(entity.getScore());
+        dto.setIncomeStability(entity.getIncomeStability());
+        dto.setExpenseControl(entity.getExpenseControl());
+        dto.setBalanceDynamics(entity.getBalanceDynamics());
+        dto.setPaymentHistory(entity.getPaymentHistory());
+        dto.setPeriodMonths(entity.getPeriodMonths());
+        return dto;  // <-- köhnə "return modelMapper.map(...)" əvəzinə
     }
 
     private BigDecimal extractStartBalance(StatementFile file) {
@@ -280,11 +288,17 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
     }
 
     private String formatDate(Date date) {
-        return date == null ? "" : new SimpleDateFormat("dd MMMM yyyy", new Locale("az")).format(date); }
-
+        if (date == null) return "";
+        SimpleDateFormat sdf = new SimpleDateFormat("dd MMMM yyyy", new Locale("az"));
+        sdf.setTimeZone(TimeZone.getTimeZone("Asia/Baku")); // GMT+4
+        return sdf.format(date);
+    }
     private String formatTime(Date date) {
-        return date == null ? "" : new SimpleDateFormat("HH:mm").format(date); }
-
+        if (date == null) return "";
+        SimpleDateFormat sdf = new SimpleDateFormat("HH:mm");
+        sdf.setTimeZone(TimeZone.getTimeZone("Asia/Baku")); // GMT+4
+        return sdf.format(date);
+    }
 
     // ✅ БРОНЕБОЙНЫЙ ХРОНОЛОГИЧЕСКИЙ СКАНЕР PDF
     private PdfData extractAllFromPdf(StatementFile file) {
