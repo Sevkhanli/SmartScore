@@ -80,7 +80,12 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
                 .findTopByUserIdOrderByUploadedAtDesc(user.getId())
                 .orElseThrow(() -> new RuntimeException("No file found"));
 
+        // Hibernate-in tranzaksiyaları tam oxuduğundan əmin oluruq
+        transactionRepository.flush();
         List<Transaction> txs = transactionRepository.findAllByStatementFileId(lastFile.getId());
+
+        System.out.println("LOG: Bazadan oxunan tranzaksiya sayı: " + (txs != null ? txs.size() : "0"));
+
         if (txs == null || txs.isEmpty()) return new AnalysisResultDto();
 
         List<Transaction> sorted = txs.stream()
@@ -90,7 +95,7 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
 
         if (sorted.isEmpty()) return new AnalysisResultDto();
 
-        // 1. СЧИТАЕМ ПРИХОД И РАСХОД ИЗ ТРАНЗАКЦИЙ
+        // 1. GƏLİR VƏ XƏRC HESABLAMA
         BigDecimal totalIncome = sorted.stream()
                 .filter(t -> t.getCategory() == CategoryType.INCOME)
                 .map(Transaction::getAmount)
@@ -102,13 +107,13 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
                 .map(BigDecimal::abs)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // 2. ГРУППИРОВКА ПО МЕСЯЦАМ (БЕЗОПАСНАЯ)
+        // 2. AYLAR ÜZRƏ GƏLİR QRUPLAŞDIRMA
         Map<YearMonth, BigDecimal> monthlyMap = sorted.stream()
                 .filter(t -> t.getCategory() == CategoryType.INCOME)
                 .collect(Collectors.toMap(
                         t -> YearMonth.from(toLocalDate(t.getOperationDate())),
                         Transaction::getAmount,
-                        BigDecimal::add // Суммируем при дубликатах ключей
+                        BigDecimal::add
                 ));
 
         BigDecimal[] monthlyIncomes = monthlyMap.values().toArray(new BigDecimal[0]);
@@ -116,14 +121,13 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
                 .map(t -> YearMonth.from(toLocalDate(t.getOperationDate())))
                 .distinct().sorted().toList();
 
-        // 3. БАЛАНС (С ПРОВЕРКОЙ НА NULL)
+        // 3. BALANS
         BigDecimal openingBalance = extractStartBalance(lastFile);
         if (openingBalance.compareTo(BigDecimal.ZERO) == 0) openingBalance = BigDecimal.ONE;
 
         BigDecimal closingBalance = openingBalance.add(totalIncome).subtract(totalExpense);
 
-
-// 4. СЧИТАЕМ МЕТРИКИ
+        // 4. METRİKLƏR
         int incomeScore = calcIncomeStability(monthlyIncomes);
         int expenseScore = calcExpenseControl(totalIncome, totalExpense);
         int balanceScore = calcBalanceDynamicsFromPdf(openingBalance, closingBalance);
@@ -139,7 +143,6 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
 
         int finalScore = clampInt(finalScoreRaw.setScale(0, RoundingMode.HALF_UP).intValue(), 0, 100);
 
-
         System.out.println("LOG: Final Analysis -> Score: " + finalScore + " | Months: " + months.size());
 
         AnalysisResult entity = new AnalysisResult();
@@ -153,7 +156,7 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
         entity.setPeriodMonths(Math.max(1, months.size()));
         analysisResultRepository.saveAndFlush(entity);
 
-        // BURAYA AT - köhnə sətri sil, bunu yaz:
+        // Manuel DTO Mapping (ModelMapper problemi yaşamamaq üçün)
         AnalysisResultDto dto = new AnalysisResultDto();
         dto.setScore(entity.getScore());
         dto.setIncomeStability(entity.getIncomeStability());
@@ -161,8 +164,11 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
         dto.setBalanceDynamics(entity.getBalanceDynamics());
         dto.setPaymentHistory(entity.getPaymentHistory());
         dto.setPeriodMonths(entity.getPeriodMonths());
-        return dto;  // <-- köhnə "return modelMapper.map(...)" əvəzinə
+
+        return dto;
     }
+
+
 
     private BigDecimal extractStartBalance(StatementFile file) {
         try {
