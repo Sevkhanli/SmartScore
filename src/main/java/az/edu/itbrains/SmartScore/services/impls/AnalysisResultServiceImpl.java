@@ -80,7 +80,12 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
                 .findTopByUserIdOrderByUploadedAtDesc(user.getId())
                 .orElseThrow(() -> new RuntimeException("No file found"));
 
-        // Hibernate-in tranzaksiyaları tam oxuduğundan əmin oluruq
+        // Bütün işi köməkçi metoda həvalə edirik
+        return calculateScoreInternal(lastFile, user);
+    }
+
+    private AnalysisResultDto calculateScoreInternal(StatementFile lastFile, User user) {
+        // Hibernate keşini təmizlə ki, tranzaksiyalar bazadan təzə oxunsun
         transactionRepository.flush();
         List<Transaction> txs = transactionRepository.findAllByStatementFileId(lastFile.getId());
 
@@ -156,7 +161,6 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
         entity.setPeriodMonths(Math.max(1, months.size()));
         analysisResultRepository.saveAndFlush(entity);
 
-        // Manuel DTO Mapping (ModelMapper problemi yaşamamaq üçün)
         AnalysisResultDto dto = new AnalysisResultDto();
         dto.setScore(entity.getScore());
         dto.setIncomeStability(entity.getIncomeStability());
@@ -167,7 +171,6 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
 
         return dto;
     }
-
 
 
     private BigDecimal extractStartBalance(StatementFile file) {
@@ -192,7 +195,6 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
     @Transactional
     public AnalysisResultDto processAndAnalyze(MultipartFile file) {
         try {
-            // 1. Render-ə uyğun tmp qovluq
             String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
             java.io.File uploadDir = new java.io.File(System.getProperty("java.io.tmpdir"), "uploads");
             if (!uploadDir.exists()) uploadDir.mkdirs();
@@ -202,7 +204,7 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
 
             User currentUser = userService.getCurrentUser();
 
-            // 2. Bazada qeyd yaradırıq
+            // 1. Faylı saveAndFlush edirik ki, ID-si dərhal yaransın
             StatementFile statementFile = new StatementFile();
             statementFile.setOriginalFileName(fileName);
             statementFile.setStoredFilePath(destination.getAbsolutePath());
@@ -211,28 +213,25 @@ public class AnalysisResultServiceImpl implements AnalysisResultService {
             statementFile.setUser(currentUser);
             statementFile.setUploadedAt(LocalDateTime.now());
 
-            statementFile = statementFileRepository.save(statementFile);
+            statementFile = statementFileRepository.saveAndFlush(statementFile);
 
-            // 3. PDF-dən mətni oxuyuruq
             String rawText = pdfService.extractText(destination.getAbsolutePath());
-
             if (rawText == null || rawText.isBlank()) {
                 throw new RuntimeException("PDF faylının məzmunu oxuna bilmədi.");
             }
 
-            // 4. AI-a göndəririk
             List<Transaction> transactions = gptService.analyzeStatementAndGetTransactions(rawText);
 
-            // 5. Transaction-ları bazaya yazırıq
+            // 2. Tranzaksiyaları fayla bağlayırıq
             for (Transaction tx : transactions) {
                 tx.setStatementFile(statementFile);
                 tx.setUser(currentUser);
             }
             transactionRepository.saveAll(transactions);
-            transactionRepository.flush();
+            transactionRepository.flush(); // BAZAYA FİZİKİ YAZILMA
 
-            // 6. Hesablama hissəsini çağırırıq
-            return calculateScore(currentUser);
+            // 3. İndi `calculateScoreInternal` köməkçi metodunu çağırırıq
+            return calculateScoreInternal(statementFile, currentUser);
 
         } catch (Exception e) {
             e.printStackTrace();
